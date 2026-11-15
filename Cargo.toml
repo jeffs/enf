@@ -1,0 +1,33 @@
+[package]
+name = "enf"
+version = "0.1.0"
+edition = "2024"
+categories = ["command-line-utilities"]
+keywords = ["cli", "env", "unix"]
+repository = "https://github.com/jeffs/enf"
+license = "MIT"
+description = "Slightly nicer than /usr/bin/env"
+
+[dependencies]
+
+[lints.clippy]
+cargo = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+
+# Most `allow` should be `expect`.
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+
+# Not actionable. Run `cargo tree --duplicates` to detect duplicates.
+multiple_crate_versions = "allow"
+
+fn_params_excessive_bools = "deny"
+indexing_slicing = "deny"
+let_underscore_must_use = "deny"
+redundant_clone = "deny"
+unneeded_field_pattern = "deny"
+wildcard_enum_match_arm = "deny"
+
+[lints.rust]
+unsafe_code = "forbid"
