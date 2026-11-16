@@ -23,12 +23,28 @@ fn load_files(files: &[&Path]) -> Vec<(String, String)> {
     envs
 }
 
+fn print_usage() {
+    println!(
+        "\
+{description}
+
+Usage: {name} [OPTIONS] [KEY=VALUE]... [PROGRAM [ARG]...]
+
+Options:
+  -f, --file <FILE>  Set variables from a dotenv file; may be repeated
+  -h, --help         Print this help",
+        description = env!("CARGO_PKG_DESCRIPTION"),
+        name = env!("CARGO_BIN_NAME"),
+    );
+}
+
 fn main() {
     // Collecting owned args into a Vec lets us split KEY=VALUE into slices,
     // rather than allocating separate owned strings for KEY and VALUE.
     let args = std::env::args_os().skip(1).collect::<Vec<_>>();
-    let enf::Args { files, envs, util } = match enf::Args::parse(&args) {
-        Ok(args) => args,
+    let enf::Args { files, envs, util } = match enf::Action::parse(&args) {
+        Ok(enf::Action::Run(args)) => args,
+        Ok(enf::Action::Help) => return print_usage(),
         Err(error) => {
             eprintln!("{}: {error}", env!("CARGO_BIN_NAME"));
             std::process::exit(2)

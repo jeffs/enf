@@ -81,19 +81,44 @@ pub struct Args<'a> {
     pub util: Utility<'a>,
 }
 
-impl<'a> Args<'a> {
-    /// Returns dotenv files, env vars, and optional utility program (and
-    /// args) to run.
+/// What the command line asks for.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Action<'a> {
+    /// Print usage, as requested by a leading `-h` or `--help`.
+    Help,
+    /// Run a utility program.
+    Run(Args<'a>),
+}
+
+impl<'a> Action<'a> {
+    /// Returns the action specified by argv.
     ///
     /// # Errors
     ///
     /// Returns [`MissingPath`] if a file option is the last arg.
     pub fn parse(mut args: &'a [ffi::OsString]) -> Result<Self, MissingPath<'a>> {
         let mut files = Vec::new();
-        while let Some((file, tail)) = try_split_file(args)? {
+        loop {
+            if args
+                .first()
+                .is_some_and(|arg| arg == "-h" || arg == "--help")
+            {
+                return Ok(Self::Help);
+            }
+            let Some((file, tail)) = try_split_file(args)? else {
+                break;
+            };
             files.push(file);
             args = tail;
         }
+        Ok(Self::Run(Args::parse(files, args)))
+    }
+}
+
+impl<'a> Args<'a> {
+    /// Returns the specified files, with env vars and optional utility program
+    /// (and args) from the args that follow any options.
+    fn parse(files: Vec<&'a Path>, args: &'a [ffi::OsString]) -> Self {
         let mut envs = Vec::new();
         let mut program = None;
         for arg in args {
@@ -110,7 +135,7 @@ impl<'a> Args<'a> {
             };
             Utility::Argv { arg0, rest }
         });
-        Ok(Self { files, envs, util })
+        Self { files, envs, util }
     }
 }
 
@@ -162,8 +187,8 @@ mod tests {
             ),
         ] {
             let args = args.iter().map(ffi::OsString::from).collect::<Vec<_>>();
-            let got = Args::parse(&args);
-            assert_eq!(got, Ok(want));
+            let got = Action::parse(&args);
+            assert_eq!(got, Ok(Action::Run(want)));
         }
     }
 
@@ -188,7 +213,28 @@ mod tests {
                 rest: &["-f".into()],
             },
         };
-        assert_eq!(Args::parse(&args), Ok(want));
+        assert_eq!(Action::parse(&args), Ok(Action::Run(want)));
+    }
+
+    #[test]
+    fn parse_args_recognizes_leading_help() {
+        for args in [
+            &["-h"][..],
+            &["--help"],
+            &["-f", "a.env", "-h", "echo"],
+            &["--help", "-f"],
+        ] {
+            let args = args.iter().map(ffi::OsString::from).collect::<Vec<_>>();
+            assert_eq!(Action::parse(&args), Ok(Action::Help));
+        }
+    }
+
+    #[test]
+    fn parse_args_passes_later_help_to_utility() {
+        for args in [&["K=V", "-h"][..], &["echo", "--help"], &["-f", "-h"]] {
+            let args = args.iter().map(ffi::OsString::from).collect::<Vec<_>>();
+            assert!(matches!(Action::parse(&args), Ok(Action::Run(_))));
+        }
     }
 
     #[test]
@@ -198,7 +244,7 @@ mod tests {
             let want = MissingPath {
                 flag: ffi::OsStr::new(flag),
             };
-            assert_eq!(Args::parse(&args), Err(want));
+            assert_eq!(Action::parse(&args), Err(want));
         }
     }
 }
