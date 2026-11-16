@@ -1,3 +1,5 @@
+mod args;
+
 use std::{
     error::Error,
     ffi,
@@ -112,9 +114,9 @@ fn main() {
     // Collecting owned args into a Vec lets us split KEY=VALUE into slices,
     // rather than allocating separate owned strings for KEY and VALUE.
     let args = std::env::args_os().skip(1).collect::<Vec<_>>();
-    let enf::Args { files, envs, util } = match enf::Action::parse(&args) {
-        Ok(enf::Action::Run(args)) => args,
-        Ok(enf::Action::Help) => return print_usage(),
+    let args::Args { files, envs, util } = match args::Action::parse(&args) {
+        Ok(args::Action::Run(args)) => args,
+        Ok(args::Action::Help) => return print_usage(),
         Err(error) => {
             eprintln!("{}: {error}", env!("CARGO_BIN_NAME"));
             std::process::exit(2)
@@ -124,11 +126,11 @@ fn main() {
     // Settings from argv take precedence over settings from files.
     let file_envs = load_files(&files);
     match util {
-        enf::Utility::None => {
+        args::Utility::None => {
             let vars = merge_envs(std::env::vars_os().collect(), file_envs);
             exit_after_print(print_envs(&merge_envs(vars, envs)))
         }
-        enf::Utility::Argv { arg0, rest } => {
+        args::Utility::Argv { arg0, rest } => {
             let mut cmd = Command::new(arg0);
             cmd.args(rest).envs(file_envs).envs(envs);
             run(&mut cmd)
