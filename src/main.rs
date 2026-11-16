@@ -1,15 +1,39 @@
-use std::{error::Error, ffi, process::Command};
+use std::{error::Error, ffi, path::Path, process::Command};
 
-fn die(program: &ffi::OsStr, error: impl Error, code: i32) -> ! {
-    eprintln!("{}: {}: {error}", env!("CARGO_BIN_NAME"), program.display());
+fn die(source: &ffi::OsStr, error: impl Error, code: i32) -> ! {
+    eprintln!("{}: {}: {error}", env!("CARGO_BIN_NAME"), source.display());
     std::process::exit(code)
+}
+
+/// Returns the env vars from the dotenv files, in order.
+fn load_files(files: &[&Path]) -> Vec<(String, String)> {
+    let mut envs = Vec::new();
+    for path in files {
+        let items = match dotenvy::from_path_iter(path) {
+            Ok(items) => items,
+            Err(error) => die(path.as_os_str(), error, 1),
+        };
+        for item in items {
+            match item {
+                Ok(env) => envs.push(env),
+                Err(error) => die(path.as_os_str(), error, 3),
+            }
+        }
+    }
+    envs
 }
 
 fn main() {
     // Collecting owned args into a Vec lets us split KEY=VALUE into slices,
     // rather than allocating separate owned strings for KEY and VALUE.
     let args = std::env::args_os().skip(1).collect::<Vec<_>>();
-    let enf::Args { envs, util } = enf::Args::parse(&args[..]);
+    let enf::Args { files, envs, util } = match enf::Args::parse(&args) {
+        Ok(args) => args,
+        Err(error) => {
+            eprintln!("{}: {error}", env!("CARGO_BIN_NAME"));
+            std::process::exit(2)
+        }
+    };
 
     // TODO: Print the environment rather than falling back to /usr/bin/env.
     let mut cmd = match util {
@@ -21,7 +45,8 @@ fn main() {
         }
     };
 
-    cmd.envs(envs);
+    // Settings from argv take precedence over settings from files.
+    cmd.envs(load_files(&files)).envs(envs);
 
     #[cfg(unix)]
     {

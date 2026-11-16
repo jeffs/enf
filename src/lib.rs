@@ -1,4 +1,4 @@
-use std::ffi;
+use std::{error::Error, ffi, fmt, path::Path};
 
 /// Splits the arg on its first `=`, if any.
 ///
@@ -38,19 +38,62 @@ pub enum Utility<'a> {
     },
 }
 
-/// Env vars and optional utility program to run.
+/// A file option that is not followed by a path.
+#[derive(Debug, PartialEq, Eq)]
+pub struct MissingPath<'a> {
+    /// The option as it appears in argv.
+    pub flag: &'a ffi::OsStr,
+}
+
+impl fmt::Display for MissingPath<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: expected path", self.flag.display())
+    }
+}
+
+impl Error for MissingPath<'_> {}
+
+/// A leading file option split from the args that follow it.
+type FileOption<'a> = (&'a Path, &'a [ffi::OsString]);
+
+/// Splits a leading `-f FILE`, `--file FILE`, or `--file=FILE` from the args.
+fn try_split_file(args: &[ffi::OsString]) -> Result<Option<FileOption<'_>>, MissingPath<'_>> {
+    let Some((flag, tail)) = args.split_first() else {
+        return Ok(None);
+    };
+    if flag == "-f" || flag == "--file" {
+        let (path, tail) = tail.split_first().ok_or(MissingPath { flag })?;
+        return Ok(Some((Path::new(path), tail)));
+    }
+    Ok(try_split_env(flag)
+        .filter(|(key, _)| *key == "--file")
+        .map(|(_, path)| (Path::new(path), tail)))
+}
+
+/// Dotenv files, env vars, and optional utility program to run.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Args<'a> {
-    /// Leading KEY=VALUE settings from argv.
+    /// Dotenv files specified by leading file options in argv.
+    pub files: Vec<&'a Path>,
+    /// KEY=VALUE settings specified after any file options in argv.
     pub envs: Vec<(&'a ffi::OsStr, &'a ffi::OsStr)>,
     /// Program and args specified after env vars in argv.
     pub util: Utility<'a>,
 }
 
 impl<'a> Args<'a> {
-    /// Returns env vars and optional utility program (and args) to run.
-    #[must_use]
-    pub fn parse(args: &'a [ffi::OsString]) -> Self {
+    /// Returns dotenv files, env vars, and optional utility program (and
+    /// args) to run.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MissingPath`] if a file option is the last arg.
+    pub fn parse(mut args: &'a [ffi::OsString]) -> Result<Self, MissingPath<'a>> {
+        let mut files = Vec::new();
+        while let Some((file, tail)) = try_split_file(args)? {
+            files.push(file);
+            args = tail;
+        }
         let mut envs = Vec::new();
         let mut program = None;
         for arg in args {
@@ -67,7 +110,7 @@ impl<'a> Args<'a> {
             };
             Utility::Argv { arg0, rest }
         });
-        Self { envs, util }
+        Ok(Self { files, envs, util })
     }
 }
 
@@ -103,6 +146,7 @@ mod tests {
                         arg0: &"echo".into(),
                         rest: &[],
                     },
+                    ..Args::default()
                 },
             ),
             (
@@ -113,12 +157,48 @@ mod tests {
                         arg0: &"echo".into(),
                         rest: &["hello".into(), "world".into()],
                     },
+                    ..Args::default()
                 },
             ),
         ] {
             let args = args.iter().map(ffi::OsString::from).collect::<Vec<_>>();
             let got = Args::parse(&args);
-            assert_eq!(got, want);
+            assert_eq!(got, Ok(want));
+        }
+    }
+
+    #[test]
+    fn parse_args_splits_file_options() {
+        let args = [
+            "-f",
+            "a.env",
+            "--file",
+            "b.env",
+            "--file=c=d.env",
+            "K=V",
+            "echo",
+            "-f",
+        ]
+        .map(ffi::OsString::from);
+        let want = Args {
+            files: ["a.env", "b.env", "c=d.env"].map(Path::new).into(),
+            envs: envs([("K", "V")]),
+            util: Utility::Argv {
+                arg0: &"echo".into(),
+                rest: &["-f".into()],
+            },
+        };
+        assert_eq!(Args::parse(&args), Ok(want));
+    }
+
+    #[test]
+    fn parse_args_rejects_file_option_without_path() {
+        for flag in ["-f", "--file"] {
+            let args = ["-f", "a.env", flag].map(ffi::OsString::from);
+            let want = MissingPath {
+                flag: ffi::OsStr::new(flag),
+            };
+            assert_eq!(Args::parse(&args), Err(want));
         }
     }
 }

@@ -9,6 +9,7 @@ license = "MIT"
 description = "Slightly nicer than /usr/bin/env"
 
 [dependencies]
+dotenvy = "0.15.7"
 
 [lints.rust]
 unsafe_code = "warn"
