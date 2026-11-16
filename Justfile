@@ -1,3 +1,9 @@
+# Lint and test.
+check: lint test
+
+test:
+    cargo test
+
 # Clippy flags apply in order, so groups precede the lints they override.
 #
 # This is stricter than the set in Cargo.toml, which is comfortable during

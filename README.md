@@ -3,6 +3,13 @@
 Slightly nicer than `/usr/bin/env`: `enf` runs a program in a modified
 environment, and can read the modifications from dotenv files.
 
+Traditional `env KEY=VALUE... some-program` invocations suffer two problems:
+
+1. The variable list can get long enough to be unwieldy.
+2. Passing secrets such as API keys this way saves them to shell history.
+
+`enf` solves both of these.
+
 ## Install
 
 ```sh
