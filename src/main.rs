@@ -9,17 +9,19 @@ fn main() {
     // Collecting owned args into a Vec lets us split KEY=VALUE into slices,
     // rather than allocating separate owned strings for KEY and VALUE.
     let args = std::env::args_os().skip(1).collect::<Vec<_>>();
-    let enf::Args {
-        envs,
-        program,
-        rest,
-    } = enf::Args::parse(&args[..]);
+    let enf::Args { envs, util } = enf::Args::parse(&args[..]);
 
     // TODO: Print the environment rather than falling back to /usr/bin/env.
-    let program = program.map_or_else(|| ffi::OsStr::new("/usr/bin/env"), ffi::OsString::as_os_str);
+    let mut cmd = match util {
+        enf::Utility::None => Command::new("/usr/bin/env"),
+        enf::Utility::Argv { arg0, rest } => {
+            let mut cmd = Command::new(arg0);
+            cmd.args(rest);
+            cmd
+        }
+    };
 
-    let mut cmd = Command::new(program);
-    let cmd = cmd.envs(envs).args(rest);
+    cmd.envs(envs);
 
     #[cfg(unix)]
     {
@@ -31,7 +33,7 @@ fn main() {
         } else {
             126 // The utility was found but could not be invoked.
         };
-        die(program, error, code);
+        die(cmd.get_program(), error, code);
     }
 
     // Fallback for non-Unix platforms. We could disable the warning by
@@ -40,6 +42,6 @@ fn main() {
     #[cfg_attr(unix, expect(unreachable_code, reason = "unreachable only on Unix"))]
     match cmd.status() {
         Ok(status) => std::process::exit(status.code().unwrap_or(1)),
-        Err(error) => die(program, error, 1),
+        Err(error) => die(cmd.get_program(), error, 1),
     }
 }

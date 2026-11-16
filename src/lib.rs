@@ -23,21 +23,32 @@ fn try_split_env(arg: &ffi::OsStr) -> Option<(&ffi::OsStr, &ffi::OsStr)> {
     Some(env.into())
 }
 
-/// Env vars, program name, and remaining args from argv.
-///
-/// TODO: Make the state with no program  but some rest args unrepresentable.
+/// A program and arguments to be executed.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub enum Utility<'a> {
+    /// No program was specified after env vars.
+    #[default]
+    None,
+    /// Arguments specified after any env vars.
+    Argv {
+        /// Program specified after env vars in argv.
+        arg0: &'a ffi::OsString,
+        /// Remainder of argv after env vars and program.
+        rest: &'a [ffi::OsString],
+    },
+}
+
+/// Env vars and optional utility program to run.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Args<'a> {
     /// Leading KEY=VALUE settings from argv.
     pub envs: Vec<(&'a ffi::OsStr, &'a ffi::OsStr)>,
-    /// Program specified after env vars in argv.
-    pub program: Option<&'a ffi::OsString>,
-    /// Remainder of argv after env vars and program.
-    pub rest: &'a [ffi::OsString],
+    /// Program and args specified after env vars in argv.
+    pub util: Utility<'a>,
 }
 
 impl<'a> Args<'a> {
-    /// Returns env vars, program name, and remaining args.
+    /// Returns env vars and optional utility program (and args) to run.
     #[must_use]
     pub fn parse(args: &'a [ffi::OsString]) -> Self {
         let mut envs = Vec::new();
@@ -50,14 +61,13 @@ impl<'a> Args<'a> {
                 break;
             }
         }
-        let Some(rest) = args.get(envs.len() + program.iter().len()..) else {
-            unreachable!("envs and program are a prefix of args");
-        };
-        Self {
-            envs,
-            program,
-            rest,
-        }
+        let util = program.map_or(Utility::None, |arg0| {
+            let Some(rest) = args.get(envs.len() + 1..) else {
+                unreachable!("envs and program are a prefix of args");
+            };
+            Utility::Argv { arg0, rest }
+        });
+        Self { envs, util }
     }
 }
 
@@ -89,16 +99,20 @@ mod tests {
                 &["ANSWER=42", "echo"],
                 Args {
                     envs: envs([("ANSWER", "42")]),
-                    program: Some(&"echo".into()),
-                    ..Args::default()
+                    util: Utility::Argv {
+                        arg0: &"echo".into(),
+                        rest: &[],
+                    },
                 },
             ),
             (
                 &["ANSWER=42", "SUM=41", "echo", "hello", "world"],
                 Args {
                     envs: envs([("ANSWER", "42"), ("SUM", "41")]),
-                    program: Some(&"echo".into()),
-                    rest: &["hello".into(), "world".into()],
+                    util: Utility::Argv {
+                        arg0: &"echo".into(),
+                        rest: &["hello".into(), "world".into()],
+                    },
                 },
             ),
         ] {
