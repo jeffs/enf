@@ -26,8 +26,7 @@ ones, and `KEY=VALUE` settings override files.
 enf -f .env -f .env.local PORT=8080 cargo run
 ```
 
-Without a program, `enf` runs `/usr/bin/env`, which prints the resulting
-environment.
+Without a program, `enf` prints the resulting environment.
 
 ## Exit status
 
@@ -36,11 +35,11 @@ environment.
 | 1      | A dotenv file could not be opened               |
 | 2      | A file option has no path                       |
 | 3      | A dotenv file could not be read or parsed       |
+| 4      | The environment could not be printed            |
 | 126    | The program was found but could not be executed |
 | 127    | The program was not found                       |
 
-Otherwise, `enf` replaces itself with the program, so the exit status is the
-program's.
+Otherwise, the exit status is the program's, or 0 if there is no program.
 
 ## License
 
